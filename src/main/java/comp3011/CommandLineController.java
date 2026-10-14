@@ -191,7 +191,7 @@ public class CommandLineController {
         System.out.println("  -w, --black-and-white  Convert frames to black and white");
         System.out.println("  -y, --yellow-frames    Apply a warmer colour temperature");
         System.out.println("  -v, --vignette-frames  Darken the frame edges");
-        System.out.println("  -d, --dust-frames	     Render dust and hair marks");
+        System.out.println("  -d, --dust-frames      Render dust and hair marks");
         System.out.println("  -j, --jitter-frames    Randomly displace frames by a few pixels");
         System.out.println("  -m, --mottle-frames    Add cloudy emulsion mottling");
         System.out.println("  -b, --bleed-frames     Bleed light into frames");
