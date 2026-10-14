@@ -49,8 +49,8 @@ public class CommandLineController {
 			 Map.entry("--flicker-frames", FrameFlickerer::new),
 			 Map.entry("--black-and-white", FrameBlackAndWhiter::new),
 			 Map.entry("--yellow-frames", FrameYellower::new),
-			 Map.entry("--vignette-frame", FrameVignetter::new),
-			 Map.entry("--dust-frame", FrameDuster::new),
+			 Map.entry("--vignette-frames", FrameVignetter::new),
+			 Map.entry("--dust-frames", FrameDuster::new),
 		     Map.entry("--jitter-frames", FrameJitterer::new),
 		     Map.entry("--mottle-frames", FrameMottler::new),
 		     Map.entry("--bleed-frames", FrameBleeder::new),
@@ -190,8 +190,8 @@ public class CommandLineController {
         System.out.println("  -f, --flicker-frames   Randomly dim frames");
         System.out.println("  -w, --black-and-white  Convert frames to black and white");
         System.out.println("  -y, --yellow-frames    Apply a warmer colour temperature");
-        System.out.println("  -v, --vignette-frame   Darken the frame edges");
-        System.out.println("  -d, --dust-frame       Render dust and hair marks");
+        System.out.println("  -v, --vignette-frames  Darken the frame edges");
+        System.out.println("  -d, --dust-frames	     Render dust and hair marks");
         System.out.println("  -j, --jitter-frames    Randomly displace frames by a few pixels");
         System.out.println("  -m, --mottle-frames    Add cloudy emulsion mottling");
         System.out.println("  -b, --bleed-frames     Bleed light into frames");
