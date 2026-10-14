@@ -103,7 +103,7 @@ public class VideoPlayerModel {
         this.playbackStateChangedHandler = playbackStateChangedHandler;
         this.audioOutputStateChangedHandler = audioOutputStateChangedHandler;
         this.frameProcessors = new ArrayList<>(frameProcessors);
-        System.out.println("Frame processors loaded: " + this.frameProcessors.size());
+        //System.out.println("Frame processors loaded: " + this.frameProcessors.size());
     }
     
     public void play(File file) {
