@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Aidan Chan A1924235
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -17,6 +17,8 @@ import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+
+import java.util.List;
 
 /**
  * The controller part of the video player model-view-controller architecture.
@@ -33,11 +35,13 @@ public class VideoPlayerController {
 
     public VideoPlayerController(
             boolean audioEnabled,
+            List<FrameProcessor> frameProcessors,
             BiConsumer<Integer, Integer> videoSizeChangedHandler) {
         this.view = new VideoPlayerView();
         this.videoSizeChangedHandler = videoSizeChangedHandler;
         model = new VideoPlayerModel(
                 audioEnabled,
+                frameProcessors,
                 this::onVideoSizeChanged,
                 this::onFrameReady,
                 this::onStatusChanged,
