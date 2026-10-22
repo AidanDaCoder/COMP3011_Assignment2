@@ -23,29 +23,33 @@ import org.bytedeco.javacv.JavaFXFrameConverter;
  * Prepares video frames ahead of time as a pipeline of threads, and queues the results for the FX thread.
  *
  * <p>
- * The frames travel from a producer thread, through one thread per effect, then through a converter thread, and end
- * up on the videoOut queue that the FX thread reads. The producer thread grabs frames, copies each one and feeds the
- * copy into the first queue. Each effect gets its own thread ({@link EffectStage}) and the converter has one too
- * ({@link FrameConverterStage}). Between two stages is a first in, first out queue, so every effect sees the frames
- * in order and the output comes out in order. A frame is only ever held by one thread at a time, so no locks are
- * needed on the pixels.
+ * The frames travel from a producer thread, through a few effect threads, then through a converter thread, and end up
+ * on the videoOut queue that the FX thread reads. The producer thread grabs frames, copies each one and feeds the
+ * copy into the first queue. The effects are cut into runs of neighbours that each get a thread ({@link EffectStage},
+ * see {@link StagePlanner}) and the converter has one too ({@link FrameConverterStage}). Between two stages is a first
+ * in, first out queue, so every effect sees the frames in order and the output comes out in order. A frame is only
+ * ever held by one thread at a time, so no locks are needed on the pixels.
  * </p>
  *
  * <p>
  * The producer is the only thread that touches the grabber, calls {@code initialise} on the effects and calls
- * {@code AudioPlayer.copySamples}. Each effect instance is used only by its own stage thread, and the converter
- * only by the converter thread.
+ * {@code AudioPlayer.copySamples}. Each effect instance is used only by the one stage thread it belongs to, and the
+ * converter only by the converter thread.
  * </p>
  */
 public class FramePreparer {
-    // How many frames may be in the pipeline at once, between the grabber and the output queue. Each frame is a
-    // copy, so this also bounds the memory used, and it is enough to keep every stage busy.
-    private static final int MIN_FRAMES_IN_FLIGHT = 8;
+    // The threads that are not effect stages: the producer, the converter and the FX thread. The effect stages get
+    // the remaining cores, so the decoder and the display are never starved of one.
+    private static final int OTHER_BUSY_THREADS = 3;
+
+    // Frames allowed in the pipeline on top of one per effect stage, so that every stage always has work waiting.
+    // Each frame is a copy, so this also bounds the memory used.
+    private static final int EXTRA_FRAMES_IN_FLIGHT = 3;
 
     // The grabber and the audio copy belong to the producer thread while it is running.
     private final FFmpegFrameGrabber grabber;
     private final JavaFXFrameConverter converter; // used only by the converter thread
-    private final List<FrameProcessor> frameProcessors; // one instance per stage thread
+    private final List<FrameProcessor> frameProcessors; // each instance is used by one stage thread only
     private final AudioPlayer audioPlayer; // only copySamples is called from here, by the producer
     private final boolean audioAvailable;
     private final BooleanSupplier audioOutputEnabled; // read live, the user can toggle audio
@@ -119,17 +123,20 @@ public class FramePreparer {
         stopRequested = false;
         errorReported.set(false);
 
+        // At most one stage per spare core, and no more than there are effects.
+        int maxStages = Math.max(2, Runtime.getRuntime().availableProcessors() - OTHER_BUSY_THREADS);
+        List<List<FrameProcessor>> stageGroups = StagePlanner.partition(frameProcessors, maxStages);
+
         // Fresh queues and permits every run, so frames left over from before a seek can never leak into this run.
-        int maxInFlight = Math.max(MIN_FRAMES_IN_FLIGHT, 2 * Runtime.getRuntime().availableProcessors());
-        framesInFlight = new Semaphore(maxInFlight);
+        framesInFlight = new Semaphore(stageGroups.size() + EXTRA_FRAMES_IN_FLIGHT);
         firstQueue = new LinkedBlockingQueue<>();
 
-        // One thread per effect, with one queue between each pair of stages.
+        // One thread per run of effects, with one queue between each pair of stages.
         BlockingQueue<FrameJob> input = firstQueue;
-        for (FrameProcessor processor : frameProcessors) {
+        for (List<FrameProcessor> group : stageGroups) {
             BlockingQueue<FrameJob> output = new LinkedBlockingQueue<>();
-            EffectStage stage = new EffectStage(processor, input, output, () -> stopRequested, this::reportError);
-            addThread(stage, "effect-stage-" + threads.size() + "-" + processor.getClass().getSimpleName());
+            EffectStage stage = new EffectStage(group, input, output, () -> stopRequested, this::reportError);
+            addThread(stage, "effect-stage-" + threads.size());
             input = output;
         }
 
@@ -147,6 +154,8 @@ public class FramePreparer {
     private void addThread(Runnable body, String name) {
         Thread t = new Thread(body, name);
         t.setDaemon(true);
+        // Slightly below normal, so that when every core is busy the FX thread still gets to draw the frames.
+        t.setPriority(Thread.NORM_PRIORITY - 1);
         threads.add(t);
     }
 
