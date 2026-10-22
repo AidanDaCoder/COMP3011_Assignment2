@@ -75,6 +75,10 @@ public class EffectStage implements Runnable {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             errorHandler.accept(e);
+        } catch (Error e) {
+            // An Error such as OutOfMemoryError would otherwise end this thread silently and the picture would just
+            // freeze, so report it like any other failure.
+            errorHandler.accept(new RuntimeException(e));
         }
     }
 }

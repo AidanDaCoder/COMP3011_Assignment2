@@ -154,8 +154,6 @@ public class FramePreparer {
     private void addThread(Runnable body, String name) {
         Thread t = new Thread(body, name);
         t.setDaemon(true);
-        // Slightly below normal, so that when every core is busy the FX thread still gets to draw the frames.
-        t.setPriority(Thread.NORM_PRIORITY - 1);
         threads.add(t);
     }
 
@@ -240,6 +238,10 @@ public class FramePreparer {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             reportError(e);
+        } catch (Error e) {
+            // An Error such as OutOfMemoryError would otherwise end this thread silently and the picture would just
+            // freeze, so report it like any other failure.
+            reportError(new RuntimeException(e));
         }
     }
 
