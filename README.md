@@ -92,7 +92,7 @@ Performance is the entry's frame rate divided by the reference player's at the f
 
 ## Testing
 
-`mvn test` runs 31 tests with JUnit 5:
+`mvn test` runs 31 unit tests with JUnit 5. `mvn verify` runs them and then the load test:
 
 * `CommandLineControllerTest` checks every short and long flag, the order of effects, bundled and repeated flags,
   independent objects for repeated flags, the options, and each error message.
@@ -100,6 +100,14 @@ Performance is the entry's frame rate divided by the reference player's at the f
   call waits for all the work, and an exception in a band reaches the caller.
 * `ParallelEffectsTest` runs the six parallel effects on a random frame twice, once with `RowParallel.forceSequential`
   on and once off, and checks the pixels are identical at four frame numbers.
+* `PlayerLoadIT` is an integration test (failsafe, so only `mvn verify` runs it). It runs the full effect chain over a synthetic 1280 x 720 frame, with the rows shared between threads and with them forced onto one thread as in the starter player, and prints the time per frame. On my 10 core MacBook Air:
+
+| Effects | Single threaded | Parallel | Speedup |
+|---|---|---|---|
+| 11 | 11.05 ms | 3.48 ms | 3.17x |
+| 33 | 32.05 ms | 9.73 ms | 3.29x |
+
+The single threaded chain fits 33 effects in one 41.7 ms frame and the parallel chain fits at least 88, which is the test's limit. It does not include moving decoding off the JavaFX thread, which needs a real video.
 
 I also checked by hand with the 11 effect string: audio and the A key, pause and resume, seeking with the arrow keys
 playing and paused, Home, resize, Esc, and the end of the video.
