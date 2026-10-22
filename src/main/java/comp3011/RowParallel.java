@@ -45,6 +45,10 @@ final class RowParallel {
 
     private static final int WORKERS = Math.max(1, Runtime.getRuntime().availableProcessors() - RESERVED_CORES);
 
+    // Switched on by the tests that compare a parallel run with a sequential run of the same effect. Nothing else
+    // sets it.
+    static volatile boolean forceSequential;
+
     // Null when there is only one worker, because then the caller just does the work itself.
     private static final ExecutorService POOL =
             WORKERS > 1 ? Executors.newFixedThreadPool(WORKERS, new WorkerThreadFactory()) : null;
@@ -66,7 +70,7 @@ final class RowParallel {
         if (rowCount <= 0) {
             return;
         }
-        if (POOL == null || rowCount < 2) {
+        if (POOL == null || rowCount < 2 || forceSequential) {
             body.run(0, rowCount);
             return;
         }

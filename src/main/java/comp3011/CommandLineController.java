@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Created in the VideoPlayerApp's main function to receive and parse the video player's command-line arguments.
@@ -28,34 +29,37 @@ import java.util.List;
  */
 public class CommandLineController {
 	
-	//a supplier creates a fresh processor on each call, so a repeated flag
-	// gets two independent objects, not one shared one.
-	private static final Map<Character, Supplier<FrameProcessor>> SHORT_FLAGS = Map.ofEntries(
-			 Map.entry('n', FrameNumberer::new),
-		     Map.entry('s', FrameScratcher::new),
-		     Map.entry('f', FrameFlickerer::new),
-		     Map.entry('w', FrameBlackAndWhiter::new),
-		     Map.entry('y', FrameYellower::new),
-		     Map.entry('v', FrameVignetter::new),
-		     Map.entry('d', FrameDuster::new),
-		     Map.entry('j', FrameJitterer::new),
-		     Map.entry('m', FrameMottler::new),
-		     Map.entry('b', FrameBleeder::new),
-		     Map.entry('p', FramePepperer::new));
-	
-	private static final Map<String, Supplier<FrameProcessor>> LONG_FLAGS = Map.ofEntries(
-			 Map.entry("--number-frames", FrameNumberer::new),
-			 Map.entry("--scratch-frames", FrameScratcher::new),
-			 Map.entry("--flicker-frames", FrameFlickerer::new),
-			 Map.entry("--black-and-white", FrameBlackAndWhiter::new),
-			 Map.entry("--yellow-frames", FrameYellower::new),
-			 Map.entry("--vignette-frames", FrameVignetter::new),
-			 Map.entry("--dust-frames", FrameDuster::new),
-		     Map.entry("--jitter-frames", FrameJitterer::new),
-		     Map.entry("--mottle-frames", FrameMottler::new),
-		     Map.entry("--bleed-frames", FrameBleeder::new),
-		     Map.entry("--pepper-frames", FramePepperer::new));
-	
+	/**
+	 * One row of the table of frame effects. The factory creates a fresh processor on each call, so a repeated flag
+	 * gets two independent objects and not one shared one.
+	 */
+	private record Effect(char shortFlag, String longFlag, String description, Supplier<FrameProcessor> factory) {
+	}
+
+	/**
+	 * The one place where effects are registered. The short flags, the long flags and the help text are all built from
+	 * this table. To add a new effect, write its FrameProcessor class and add one row here with an unused letter, so
+	 * nothing else in this file needs to change.
+	 */
+	private static final List<Effect> EFFECTS = List.of(
+			new Effect('n', "--number-frames", "Render the frame number onto each frame", FrameNumberer::new),
+			new Effect('s', "--scratch-frames", "Render vertical film scratches", FrameScratcher::new),
+			new Effect('f', "--flicker-frames", "Randomly dim frames", FrameFlickerer::new),
+			new Effect('w', "--black-and-white", "Convert frames to black and white", FrameBlackAndWhiter::new),
+			new Effect('y', "--yellow-frames", "Apply a warmer colour temperature", FrameYellower::new),
+			new Effect('v', "--vignette-frames", "Darken the frame edges", FrameVignetter::new),
+			new Effect('d', "--dust-frames", "Render dust and hair marks", FrameDuster::new),
+			new Effect('j', "--jitter-frames", "Randomly displace frames by a few pixels", FrameJitterer::new),
+			new Effect('m', "--mottle-frames", "Add cloudy emulsion mottling", FrameMottler::new),
+			new Effect('b', "--bleed-frames", "Bleed light into frames", FrameBleeder::new),
+			new Effect('p', "--pepper-frames", "Pepper frames with dark spots/blotches", FramePepperer::new));
+
+	private static final Map<Character, Supplier<FrameProcessor>> SHORT_FLAGS = EFFECTS.stream()
+			.collect(Collectors.toMap(Effect::shortFlag, Effect::factory));
+
+	private static final Map<String, Supplier<FrameProcessor>> LONG_FLAGS = EFFECTS.stream()
+			.collect(Collectors.toMap(Effect::longFlag, Effect::factory));
+
     private final String[] args;
 
     private boolean helpRequested;
@@ -185,17 +189,10 @@ public class CommandLineController {
         System.out.println("  -2, --monitor-2    Open the player on display 2");
         System.out.println();
         System.out.println("Frame processors:");
-        System.out.println("  -n, --number-frames    Render the frame number onto each frame");
-        System.out.println("  -s, --scratch-frames   Render vertical film scratches");
-        System.out.println("  -f, --flicker-frames   Randomly dim frames");
-        System.out.println("  -w, --black-and-white  Convert frames to black and white");
-        System.out.println("  -y, --yellow-frames    Apply a warmer colour temperature");
-        System.out.println("  -v, --vignette-frames  Darken the frame edges");
-        System.out.println("  -d, --dust-frames      Render dust and hair marks");
-        System.out.println("  -j, --jitter-frames    Randomly displace frames by a few pixels");
-        System.out.println("  -m, --mottle-frames    Add cloudy emulsion mottling");
-        System.out.println("  -b, --bleed-frames     Bleed light into frames");
-        System.out.println("  -p, --pepper-frames    Pepper frames with dark spots/blotches");
+        for (Effect effect : EFFECTS) {
+            System.out.println(String.format(
+                    "  -%c, %-19s%s", effect.shortFlag(), effect.longFlag(), effect.description()));
+        }
         System.out.println();
         System.out.println("Frame processors are applied in command-line order and may be repeated.");
         System.out.println("Example: -nssnfwyvdjmbp numbers, scratches twice, numbers again, flickers,");
