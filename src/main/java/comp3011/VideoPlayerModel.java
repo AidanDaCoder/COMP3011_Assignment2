@@ -80,13 +80,6 @@ public class VideoPlayerModel {
     private JavaFXFrameConverter converter; // Takes Frame objects to JavaFX Image objects, which can be put on screen.
     private AudioPlayer audioPlayer; // This is ours. It has some real time buffering smarts.
     private FramePreparer preparer; // Runs the grab, effects and convert loop on its own thread.
-    // Bumped on the FX thread just after each preparer.stop() returns (seek, close). The preparer thread reads it when
-    // it fails, and the FX thread compares it again when the error callback runs, so an error from a run that has
-    // since been stopped is ignored. It is bumped after stop() because stop() joins the thread: once it returns, the
-    // old run cannot report anything new, so everything it did report carries an older number. Without this, a late
-    // error could close the session that a seek had just restarted.
-    // Only the FX thread writes it, so the volatile read and write are enough and no lock is needed.
-    private volatile int preparerRun;
     private boolean playbackOpen; // True when playback is happening.
     private boolean pauseRequested;
     // Written on the FX thread, read by the preparer thread to decide whether to copy audio.
@@ -213,7 +206,6 @@ public class VideoPlayerModel {
         try {
             // The grabber may only be moved while the preparer is not using it, so stop, reposition, restart.
             preparer.stop();
-            preparerRun++; // the old run has fully exited, so any error it reported is now stale
             grabber.setTimestamp(grabTimestampUs);
             resetPlaybackClock(logicalTimestampUs);
             flushAudioOutput();
@@ -292,20 +284,7 @@ public class VideoPlayerModel {
                 videoFrameDurationUs,
                 preparedFrames,
                 pendingAudio,
-                this::reportPreparerError);
-    }
-
-    /**
-     * Called on the preparer thread when it fails. The error is handled on the FX thread, but only if the run that
-     * failed is still the current one: a seek or close in between makes it stale (see {@link #preparerRun}).
-     */
-    private void reportPreparerError(Exception e) {
-        int failedRun = preparerRun;
-        Platform.runLater(() -> {
-            if (failedRun == preparerRun) {
-                handlePlaybackError(e);
-            }
-        });
+                e -> Platform.runLater(() -> handlePlaybackError(e)));
     }
 
     private void resetPlaybackClock(long logicalTimestampUs) {
@@ -456,7 +435,6 @@ public class VideoPlayerModel {
         // The preparer must be stopped before the grabber, converter and audio player are closed under it.
         if (preparer != null) {
             preparer.stop();
-            preparerRun++; // the old run has fully exited, so any error it reported is now stale
             preparer = null;
         }
         preparedFrames.clear();

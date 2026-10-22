@@ -70,7 +70,6 @@ right fit.
 ### Stopping and seeking
 
 The preparer is stopped with a flag, not `Thread.interrupt`, because interrupting a thread inside native FFmpeg code is unsafe. `stop()` joins the thread, so a seek can reposition the grabber knowing nothing else is using it. A seek stops the preparer, calls `setTimestamp`, clears the queues and the clock, flushes audio and restarts the preparer. While paused the preparer fills the queue and blocks, and the FX thread holds the frames, showing only the first frame after a seek. At the end of the video the preparer queues an end marker (`PreparedFrame.END`).
-If the preparer fails, its error is handled on the FX thread only if no seek or close has happened since. A counter in `VideoPlayerModel` (`preparerRun`) is bumped after each `stop()` and compared when the error arrives, so a late error from an old run cannot close the session a seek has just restarted.
 
 ### The mottler change
 
@@ -115,6 +114,7 @@ playing and paused, Home, resize, Esc, and the end of the video.
 
 ## Known limits
 
+* An error callback from an old preparer that arrives after a seek could close the new session.
 * Startup scored 90% on TITAN for the row parallel versions against 100% for the single preparer version. The startup figure seems to come from the run with one cheap effect, which does not use the parallel code.
 * With two or fewer cores `RowParallel` has no workers and the effects run on the preparer thread, which is correct but no faster.
 * Decode, conversion and the cheap effects are still on one thread, which limits the speed up at high effect counts.
