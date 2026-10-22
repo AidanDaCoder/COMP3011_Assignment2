@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Aidan Chan A1924235
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -121,22 +121,25 @@ public class FrameVignetter extends FrameProcessor {
         int channels = videoInfo.imageChannels();
         int stride = videoInfo.imageStride();
 
-        for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            byte[] yLookup = yLookups[y];
+        // Every row is independent, so the rows are shared out between the worker threads.
+        RowParallel.forRows(height, (fromRow, toRow) -> {
+            for (int y = fromRow; y < toRow; y++) {
+                int rowStart = y * stride;
+                byte[] yLookup = yLookups[y];
 
-            for (int x = 0; x < width; x++) {
-                int base = rowStart + x * channels;
-                byte[] xLookup = xLookups[x];
+                for (int x = 0; x < width; x++) {
+                    int base = rowStart + x * channels;
+                    byte[] xLookup = xLookups[x];
 
-                for (int channel = 0; channel < channels; channel++) {
-                    int index = base + channel;
-                    int value = Byte.toUnsignedInt(pixels.get(index));
-                    value = Byte.toUnsignedInt(xLookup[value]);
-                    pixels.put(index, yLookup[value]);
+                    for (int channel = 0; channel < channels; channel++) {
+                        int index = base + channel;
+                        int value = Byte.toUnsignedInt(pixels.get(index));
+                        value = Byte.toUnsignedInt(xLookup[value]);
+                        pixels.put(index, yLookup[value]);
+                    }
                 }
             }
-        }
+        });
     }
 
     private int clamp(int value, int min, int max) {

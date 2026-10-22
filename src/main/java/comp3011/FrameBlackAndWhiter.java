@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Aidan Chan A1924235
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -56,20 +56,23 @@ public class FrameBlackAndWhiter extends FrameProcessor {
         int channels = videoInfo.imageChannels();
         int stride = videoInfo.imageStride();
 
-        for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            for (int x = 0; x < width; x++) {
-                int base = rowStart + x * channels;
-                // JavaCV supplies these decoded frames in BGR byte order.
-                int b = Byte.toUnsignedInt(pixels.get(base));
-                int g = Byte.toUnsignedInt(pixels.get(base + 1));
-                int r = Byte.toUnsignedInt(pixels.get(base + 2));
-                byte luminance = (byte) ((54 * r + 183 * g + 19 * b) / 256);
+        // Every row is independent, so the rows are shared out between the worker threads.
+        RowParallel.forRows(height, (fromRow, toRow) -> {
+            for (int y = fromRow; y < toRow; y++) {
+                int rowStart = y * stride;
+                for (int x = 0; x < width; x++) {
+                    int base = rowStart + x * channels;
+                    // JavaCV supplies these decoded frames in BGR byte order.
+                    int b = Byte.toUnsignedInt(pixels.get(base));
+                    int g = Byte.toUnsignedInt(pixels.get(base + 1));
+                    int r = Byte.toUnsignedInt(pixels.get(base + 2));
+                    byte luminance = (byte) ((54 * r + 183 * g + 19 * b) / 256);
 
-                for (int channel = 0; channel < channels; channel++) {
-                    pixels.put(base + channel, luminance);
+                    for (int channel = 0; channel < channels; channel++) {
+                        pixels.put(base + channel, luminance);
+                    }
                 }
             }
-        }
+        });
     }
 }

@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Aidan Chan A1924235
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -79,13 +79,16 @@ public class FrameFlickerer extends FrameProcessor {
         int widthBytes = videoInfo.imageWidth() * videoInfo.imageChannels();
         int stride = videoInfo.imageStride();
 
-        for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            for (int offset = 0; offset < widthBytes; offset++) {
-                int index = rowStart + offset;
-                pixels.put(index, dimLookup[Byte.toUnsignedInt(pixels.get(index))]);
+        // Every row is independent, so the rows are shared out between the worker threads.
+        RowParallel.forRows(height, (fromRow, toRow) -> {
+            for (int y = fromRow; y < toRow; y++) {
+                int rowStart = y * stride;
+                for (int offset = 0; offset < widthBytes; offset++) {
+                    int index = rowStart + offset;
+                    pixels.put(index, dimLookup[Byte.toUnsignedInt(pixels.get(index))]);
+                }
             }
-        }
+        });
     }
 
     private int clamp(int value, int min, int max) {

@@ -4,7 +4,7 @@
  * 
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
- *   2. <student name and student number insert here upon modification>
+ *   2. Aidan Chan A1924235
  *
  * Copyright 2026 Simon Ratcliffe
  */
@@ -40,6 +40,10 @@ public class FrameMottler extends FrameProcessor {
     private static final double DAMAGE_MASK_THRESHOLD = 0.55;
     private static final int EFFECT_BLOCK_SIZE = 4;
     private static final int SCALE_LOOKUP_SIZE = 512;
+    // The three scale indices of a block are packed into one int, 10 bits each, which fits as the size is below 1024.
+    private static final int INDEX_BITS = 10;
+    private static final int INDEX_MASK = (1 << INDEX_BITS) - 1;
+    private static final int NO_MOTTLE = -1;
     private static final double MAX_DARKEN_PERCENTAGE = 18.0;
     private static final double MAX_LIGHTEN_PERCENTAGE = 5.0;
     private static final double STAIN_THRESHOLD = 0.35;
@@ -68,9 +72,6 @@ public class FrameMottler extends FrameProcessor {
     private byte[][] scaleLookups;
     private double minimumScale;
     private double maximumScale;
-    private int blockBlueScaleIndex;
-    private int blockGreenScaleIndex;
-    private int blockRedScaleIndex;
 
     public FrameMottler() {
         super();
@@ -279,36 +280,47 @@ public class FrameMottler extends FrameProcessor {
         int channels = videoInfo.imageChannels();
         int stride = videoInfo.imageStride();
 
-        for (int blockY = 0; blockY < height; blockY += EFFECT_BLOCK_SIZE) {
-            int blockYEnd = Math.min(blockY + EFFECT_BLOCK_SIZE, height);
-            int sampleY = (blockY + blockYEnd - 1) / 2;
+        int blockRows = (height + EFFECT_BLOCK_SIZE - 1) / EFFECT_BLOCK_SIZE;
 
-            for (int blockX = 0; blockX < width; blockX += EFFECT_BLOCK_SIZE) {
-                int blockXEnd = Math.min(blockX + EFFECT_BLOCK_SIZE, width);
-                int sampleX = (blockX + blockXEnd - 1) / 2;
+        // A row here is a row of blocks. The fields and masks are only read, and each block works out its own scale
+        // indices without touching the instance, so the rows of blocks are shared out between the worker threads.
+        RowParallel.forRows(blockRows, (fromRow, toRow) -> {
+            for (int blockRow = fromRow; blockRow < toRow; blockRow++) {
+                int blockY = blockRow * EFFECT_BLOCK_SIZE;
+                int blockYEnd = Math.min(blockY + EFFECT_BLOCK_SIZE, height);
+                int sampleY = (blockY + blockYEnd - 1) / 2;
 
-                if (!prepareScaleIndicesForBlock(
-                        sampleX,
-                        sampleY,
-                        brightnessField,
-                        stainField,
-                        damageMaskBlend)) {
-                    continue;
+                for (int blockX = 0; blockX < width; blockX += EFFECT_BLOCK_SIZE) {
+                    int blockXEnd = Math.min(blockX + EFFECT_BLOCK_SIZE, width);
+                    int sampleX = (blockX + blockXEnd - 1) / 2;
+
+                    int scaleIndices = scaleIndicesForBlock(
+                            sampleX,
+                            sampleY,
+                            brightnessField,
+                            stainField,
+                            damageMaskBlend);
+                    if (scaleIndices == NO_MOTTLE) {
+                        continue;
+                    }
+
+                    applyMottleBlock(
+                            pixels,
+                            blockX,
+                            blockXEnd,
+                            blockY,
+                            blockYEnd,
+                            channels,
+                            stride,
+                            scaleIndices);
                 }
-
-                applyMottleBlock(
-                        pixels,
-                        blockX,
-                        blockXEnd,
-                        blockY,
-                        blockYEnd,
-                        channels,
-                        stride);
             }
-        }
+        });
     }
 
-    private boolean prepareScaleIndicesForBlock(
+    // Returns the packed scale indices for a block, or NO_MOTTLE if the block is left alone. It returns the result
+    // and keeps nothing in the instance, because several threads call it at the same time.
+    private int scaleIndicesForBlock(
             int x,
             int y,
             double[] brightnessField,
@@ -316,14 +328,13 @@ public class FrameMottler extends FrameProcessor {
             double damageMaskBlend) {
         double damageStrength = sampleDamageMask(x, y, damageMaskBlend);
         if (damageStrength <= 0.0) {
-            return false;
+            return NO_MOTTLE;
         }
 
         double brightness = smoothstep(sampleField(brightnessField, x, y));
         double stain = smoothstep(sampleField(stainField, x, y));
 
-        setBlockScaleIndices(brightness, stain, damageStrength);
-        return true;
+        return packedScaleIndices(brightness, stain, damageStrength);
     }
 
     private double sampleDamageMask(int x, int y, double damageMaskBlend) {
@@ -347,7 +358,7 @@ public class FrameMottler extends FrameProcessor {
         return lerp(top, bottom, yBlend);
     }
 
-    private void setBlockScaleIndices(double brightness, double stain, double damageStrength) {
+    private int packedScaleIndices(double brightness, double stain, double damageStrength) {
         double brightnessScale;
         if (brightness < 0.5) {
             brightnessScale = 1.0 - (0.5 - brightness) * 2.0 * MAX_DARKEN_PERCENTAGE / 100.0;
@@ -363,9 +374,9 @@ public class FrameMottler extends FrameProcessor {
         double greenScale = brightnessScale * (1.0 + stainStrength * GREEN_STAIN_BOOST_PERCENTAGE / 100.0);
         double redScale = brightnessScale * (1.0 + stainStrength * RED_STAIN_BOOST_PERCENTAGE / 100.0);
 
-        blockBlueScaleIndex = scaleIndex(blueScale);
-        blockGreenScaleIndex = scaleIndex(greenScale);
-        blockRedScaleIndex = scaleIndex(redScale);
+        return scaleIndex(blueScale)
+                | (scaleIndex(greenScale) << INDEX_BITS)
+                | (scaleIndex(redScale) << (2 * INDEX_BITS));
     }
 
     private void applyMottleBlock(
@@ -375,10 +386,11 @@ public class FrameMottler extends FrameProcessor {
             int blockY,
             int blockYEnd,
             int channels,
-            int stride) {
-        byte[] blueLookup = scaleLookups[blockBlueScaleIndex];
-        byte[] greenLookup = scaleLookups[blockGreenScaleIndex];
-        byte[] redLookup = scaleLookups[blockRedScaleIndex];
+            int stride,
+            int scaleIndices) {
+        byte[] blueLookup = scaleLookups[scaleIndices & INDEX_MASK];
+        byte[] greenLookup = scaleLookups[(scaleIndices >> INDEX_BITS) & INDEX_MASK];
+        byte[] redLookup = scaleLookups[(scaleIndices >> (2 * INDEX_BITS)) & INDEX_MASK];
 
         for (int y = blockY; y < blockYEnd; y++) {
             int rowStart = y * stride;
